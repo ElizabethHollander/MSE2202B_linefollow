@@ -292,15 +292,15 @@ void loop()
 #endif
 
        // set motor speeds
-        ui_Left_Motor_Speed = constrain(ui_Motors_Speed + ui_Left_Motor_Offset, 1600, 2100);
-        ui_Right_Motor_Speed = constrain(ui_Motors_Speed + ui_Right_Motor_Offset, 1600, 2100);
+        ui_Left_Motor_Speed = constrain((ui_Motors_Speed + ui_Left_Motor_Offset)*0.9, 1600, 2100);
+        ui_Right_Motor_Speed = constrain((ui_Motors_Speed + ui_Right_Motor_Offset)*0.9, 1600, 2100);
 
        /***************************************************************************************
          Add line tracking code here. 
          Adjust motor speed according to information from line tracking sensors and 
          possibly encoder counts.
        /*************************************************************************************/
-
+       
       //For now, assuming black line
       //Follows line, stops on light, goes on black or single black in middle
       //adjusts speed to half if drifting off
@@ -322,15 +322,33 @@ void loop()
       //middle line dark, edges light, leave as is (at full), ditto for all dark
       if(ui_Left_Line_Tracker_isDark&&(!ui_Right_Line_Tracker_isDark))
       {
-        //if left dark, right light, middle doesn't matter
+        //if left dark, right light, middle affects amount of drift
         //is drifting to the right, cut left motor
-        ui_Left_Motor_Speed=ci_Left_Motor_Stop;
+        if(ui_Middle_Line_Tracker_isDark)
+        {
+          //drift slightly
+          ui_Left_Motor_Speed=200;
+        }
+        else
+        {
+          //drifted a lot
+          ui_Left_Motor_Speed*=0.75;
+        }
       }
       else if((!ui_Left_Line_Tracker_isDark)&&(ui_Right_Line_Tracker_isDark))
       {
-        //left is light, right is dark, middle doesn't matter
+        //left is light, right is dark, affects drift
         //is drifting to left, cut right motor
-        ui_Right_Motor_Speed=ci_Right_Motor_Stop;
+        if(ui_Middle_Line_Tracker_isDark)
+        {
+          //drifting a little
+          ui_Right_Motor_Speed=200;
+        }
+        else
+        {
+          //drifting a lot
+          ui_Right_Motor_Speed*=0.75;
+        }
       }
 
 
