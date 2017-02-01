@@ -327,12 +327,12 @@ void loop()
         if(ui_Middle_Line_Tracker_isDark)
         {
           //drift slightly
-          ui_Left_Motor_Speed=200;
+          ui_Left_Motor_Speed-=100;
         }
         else
         {
           //drifted a lot
-          ui_Left_Motor_Speed*=0.75;
+          ui_Left_Motor_Speed=ci_Left_Motor_Stop;
         }
       }
       else if((!ui_Left_Line_Tracker_isDark)&&(ui_Right_Line_Tracker_isDark))
@@ -342,12 +342,12 @@ void loop()
         if(ui_Middle_Line_Tracker_isDark)
         {
           //drifting a little
-          ui_Right_Motor_Speed=200;
+          ui_Right_Motor_Speed-=100;
         }
         else
         {
           //drifting a lot
-          ui_Right_Motor_Speed*=0.75;
+          ui_Right_Motor_Speed=ci_Right_Motor_Stop;
         }
       }
 
