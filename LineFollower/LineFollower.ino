@@ -107,15 +107,16 @@ unsigned long ul_Echo_Time;
 unsigned int ui_Left_Line_Tracker_Data;     //Line Tracker Data is measured input from light sensors
 unsigned int ui_Middle_Line_Tracker_Data;   //Dark is high value, light is low value
 unsigned int ui_Right_Line_Tracker_Data;
-unsigned int ui_Motors_Speed = 1900;        // Default run speed
+unsigned int ui_Motors_Speed = 1650;        // Default run speed
 unsigned int ui_Left_Motor_Speed;
 unsigned int ui_Right_Motor_Speed;
 long l_Left_Motor_Position;
 long l_Right_Motor_Position;
-
-bool ui_Left_Line_Tracker_isDark;    //Lines I added for our logic of what the sensors have
-bool ui_Middle_Line_Tracker_isDark;  //Note, code only checks if dark, if light its just assumed as not dark
-bool ui_Right_Line_Tracker_isDark;   //we may want to change this later, but not sure what we'd do with middle ground readings (not dark or light)
+                                     //using nv_ before the variables I add for less confusion
+bool nv_Left_Line_Tracker_isDark;    //Lines I added for our logic of what the sensors have
+bool nv_Middle_Line_Tracker_isDark;  //Note, code only checks if dark, if light its just assumed as not dark
+bool nv_Right_Line_Tracker_isDark;   //we may want to change this later, but not sure what we'd do with middle ground readings (not dark or light)
+bool nv_Line_is_Light=true;           //change based on testing conditions
 
 //more variables from original code
 unsigned long ul_3_Second_timer = 0;
@@ -292,21 +293,21 @@ void loop()
 #endif
 
        // set motor speeds
-        ui_Left_Motor_Speed = constrain((ui_Motors_Speed + ui_Left_Motor_Offset)*0.9, 1600, 2100);
-        ui_Right_Motor_Speed = constrain((ui_Motors_Speed + ui_Right_Motor_Offset)*0.9, 1600, 2100);
+        ui_Left_Motor_Speed = constrain((ui_Motors_Speed + ui_Left_Motor_Offset), 1600, 2100);
+        ui_Right_Motor_Speed = constrain((ui_Motors_Speed + ui_Right_Motor_Offset), 1600, 2100);
 
        /***************************************************************************************
          Add line tracking code here. 
          Adjust motor speed according to information from line tracking sensors and 
          possibly encoder counts.
        /*************************************************************************************/
-       
+
       //For now, assuming black line
       //Follows line, stops on light, goes on black or single black in middle
       //adjusts speed to half if drifting off
       //stops one wheel if really drifting
 
-      if((!ui_Left_Line_Tracker_isDark)&&(!ui_Middle_Line_Tracker_isDark)&&(!ui_Right_Line_Tracker_isDark))
+      if((!nv_Left_Line_Tracker_isDark)&&(!nv_Middle_Line_Tracker_isDark)&&(!nv_Right_Line_Tracker_isDark))
       {
         //all sensors light, stop
         bt_Motors_Enabled=false;
@@ -316,46 +317,60 @@ void loop()
         //at least one sensor dark, motors should go adjustment to steering below
         bt_Motors_Enabled=true;
       }
+      if(nv_Left_Line_Tracker_isDark && nv_Middle_Line_Tracker_isDark && nv_Right_Line_Tracker_isDark)
+      {
+        ui_Left_Motor_Speed = ci_Left_Motor_Stop;
+        ui_Right_Motor_Speed = ci_Right_Motor_Stop;
+      }
 
       //steers by adjusting the stated motor speeds for when it is enabled or not
       //Speeds get reset at begining of each loop, don't worry about losing calibrated values etc
       //middle line dark, edges light, leave as is (at full), ditto for all dark
-      if(ui_Left_Line_Tracker_isDark&&(!ui_Right_Line_Tracker_isDark))
+      else if(nv_Left_Line_Tracker_isDark&&(!nv_Right_Line_Tracker_isDark))
       {
         //if left dark, right light, middle affects amount of drift
         //is drifting to the right, cut left motor
-        if(ui_Middle_Line_Tracker_isDark)
+        if(nv_Middle_Line_Tracker_isDark)
         {
           //drift slightly
-          ui_Left_Motor_Speed=200;
+          ui_Left_Motor_Speed=constrain(ui_Left_Motor_Speed-100,1500,2100);
         }
         else
         {
           //drifted a lot
-          ui_Left_Motor_Speed*=0.75;
+          ui_Left_Motor_Speed=200;
         }
       }
-      else if((!ui_Left_Line_Tracker_isDark)&&(ui_Right_Line_Tracker_isDark))
+      else if((!nv_Left_Line_Tracker_isDark)&&(nv_Right_Line_Tracker_isDark))
       {
         //left is light, right is dark, affects drift
         //is drifting to left, cut right motor
-        if(ui_Middle_Line_Tracker_isDark)
+        if(nv_Middle_Line_Tracker_isDark)
         {
           //drifting a little
-          ui_Right_Motor_Speed=200;
+          ui_Right_Motor_Speed=constrain(ui_Right_Motor_Speed-100,1500,2100);
         }
         else
         {
           //drifting a lot
-          ui_Right_Motor_Speed*=0.75;
+          ui_Right_Motor_Speed=200;
         }
       }
 
 
         if(bt_Motors_Enabled)
         {
+          if(nv_Line_is_Light)
+          {
+          //is set to true if light line on dark background
+          servo_LeftMotor.writeMicroseconds(ui_Right_Motor_Speed);
+          servo_RightMotor.writeMicroseconds(ui_Left_Motor_Speed);
+          }
+          else
+          {
           servo_LeftMotor.writeMicroseconds(ui_Left_Motor_Speed);
           servo_RightMotor.writeMicroseconds(ui_Right_Motor_Speed);
+          }
         }
         else
         {  
@@ -566,32 +581,32 @@ void readLineTrackers()
   if(ui_Left_Line_Tracker_Data < (ui_Left_Line_Tracker_Dark - ui_Line_Tracker_Tolerance))
   {
     CharliePlexM::Write(ci_Left_Line_Tracker_LED, HIGH);
-    ui_Left_Line_Tracker_isDark=false;
+    nv_Left_Line_Tracker_isDark=false;
   }
   else
   { 
     CharliePlexM::Write(ci_Left_Line_Tracker_LED, LOW);
-    ui_Left_Line_Tracker_isDark=true;
+    nv_Left_Line_Tracker_isDark=true;
   }
   if(ui_Middle_Line_Tracker_Data < (ui_Middle_Line_Tracker_Dark - ui_Line_Tracker_Tolerance))
   {
     CharliePlexM::Write(ci_Middle_Line_Tracker_LED, HIGH);
-    ui_Middle_Line_Tracker_isDark=false;
+    nv_Middle_Line_Tracker_isDark=false;
   }
   else
   { 
     CharliePlexM::Write(ci_Middle_Line_Tracker_LED, LOW);
-    ui_Middle_Line_Tracker_isDark=true;
+    nv_Middle_Line_Tracker_isDark=true;
   }
   if(ui_Right_Line_Tracker_Data < (ui_Right_Line_Tracker_Dark - ui_Line_Tracker_Tolerance))
   {
     CharliePlexM::Write(ci_Right_Line_Tracker_LED, HIGH);
-    ui_Right_Line_Tracker_isDark=false;
+    nv_Right_Line_Tracker_isDark=false;
   }
   else
   { 
     CharliePlexM::Write(ci_Right_Line_Tracker_LED, LOW);
-    ui_Right_Line_Tracker_isDark=true;
+    nv_Right_Line_Tracker_isDark=true;
   }
 
 #ifdef DEBUG_LINE_TRACKERS
