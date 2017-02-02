@@ -117,6 +117,11 @@ bool nv_Left_Line_Tracker_isDark;    //Lines I added for our logic of what the s
 bool nv_Middle_Line_Tracker_isDark;  //Note, code only checks if dark, if light its just assumed as not dark
 bool nv_Right_Line_Tracker_isDark;   //we may want to change this later, but not sure what we'd do with middle ground readings (not dark or light)
 bool nv_Line_is_Light=true;           //change based on testing conditions
+unsigned long nv_Left_Encoder_Start;   //used for debouncing line following
+unsigned long nv_Left_Encoder_Current;
+unsigned long nv_Right_Encoder_Start;
+unsigned long nv_Right_Encoder_Current;
+bool nv_Line_Debounce_Active=false;   //true for first few encodor counts
 
 //more variables from original code
 unsigned long ul_3_Second_timer = 0;
@@ -309,13 +314,29 @@ void loop()
 
       if((!nv_Left_Line_Tracker_isDark)&&(!nv_Middle_Line_Tracker_isDark)&&(!nv_Right_Line_Tracker_isDark))
       {
-        //all sensors light, stop
-        bt_Motors_Enabled=false;
+        //debouncing for slight off-track reading between lights
+        if(nv_Line_Debounce_Active)
+        {
+          //just changed to this reading
+          nv_Line_Debounce_Active=false;
+          nv_Left_Encoder_Start=encoder_LeftMotor.getRawPosition();
+          nv_Right_Encoder_Start=encoder_RightMotor.getRawPosition();
+        }
+        nv_Left_Encoder_Current=encoder_LeftMotor.getRawPosition();
+        nv_Right_Encoder_Current=encoder_RightMotor.getRawPosition();
+
+        if(((nv_Left_Encoder_Current-nv_Left_Encoder_Start)>10)||(nv_Right_Encoder_Current-nv_Right_Encoder_Start)>10)
+        {
+          //more than 10 has passed for either encoder, it is off track
+          //all sensors light, stop
+          bt_Motors_Enabled=false; 
+        }
       }
       else
       {
         //at least one sensor dark, motors should go adjustment to steering below
         bt_Motors_Enabled=true;
+        nv_Line_Debounce_Active=true; //prep debounce for next reading
       }
       if(nv_Left_Line_Tracker_isDark && nv_Middle_Line_Tracker_isDark && nv_Right_Line_Tracker_isDark)
       {
