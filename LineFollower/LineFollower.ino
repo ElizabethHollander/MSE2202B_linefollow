@@ -306,7 +306,7 @@ void loop()
          Adjust motor speed according to information from line tracking sensors and 
          possibly encoder counts.
        /*************************************************************************************/
-
+//this not the current code. where;s my switch statement?
       //For now, assuming black line
       //Follows line, stops on light, goes on black or single black in middle
       //adjusts speed to half if drifting off
