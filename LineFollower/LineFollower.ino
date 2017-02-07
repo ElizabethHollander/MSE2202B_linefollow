@@ -121,9 +121,10 @@ unsigned long nv_Left_Encoder_Start;   //used for debouncing line following
 unsigned long nv_Left_Encoder_Current;
 unsigned long nv_Right_Encoder_Start;
 unsigned long nv_Right_Encoder_Current;
-int nv_Line_Debounce_Mode=0;          //increments from 0-8 on stages of debouncing
+int nv_Line_Debounce_Mode=0;          //increments from 0-8 on stages of debouncing, stages 2-7 double for wiggle mode searches
 int nv_Line_Debounce_Count=10;       //how many encoder counts off the main line before something needs to change?
 int nv_Last_Line_Tracker_Index;      //1 if left was last on, 2 if only middle, 3 if right, 4 if all/reset
+int nv_Wiggle_Encoder_Count;         //used by wiggle functions, how far should it turn in a search for track?
 
 //more variables from original code
 unsigned long ul_3_Second_timer = 0;
@@ -308,149 +309,8 @@ void loop()
          Adjust motor speed according to information from line tracking sensors and 
          possibly encoder counts.
        /*************************************************************************************/
-
-      //Line colour is determined by last calibration done. Calibrate line colour last. Reset defaults to black line.
-      //Follows line, stops off track or all solid track
-      //slows or stops a wheel if drifting off
-      //if gone too far off, will turn slightly to attempt to find track, before giving up and stopping
-
-      if((!nv_Left_Line_Tracker_onTrack)&&(!nv_Middle_Line_Tracker_onTrack)&&(!nv_Right_Line_Tracker_onTrack))
-      {
-        //debouncing for slight off-track reading between lights
-        nv_Left_Encoder_Current=encoder_LeftMotor.getRawPosition();
-        nv_Right_Encoder_Current=encoder_RightMotor.getRawPosition();
-
-
-        switch(nv_Line_Debounce_Mode)
-        {
-          case 0:
-            //just toggled to all off track, begin encoder counts
-            nv_Line_Debounce_Mode=1;
-            nv_Left_Encoder_Start=encoder_LeftMotor.getRawPosition();
-            nv_Right_Encoder_Start=encoder_RightMotor.getRawPosition();
-            break;
-          case 1:
-            //Nothing changes, continue as is until debounce tick passes
-            if((nv_Left_Encoder_Current-nv_Left_Encoder_Start)>(nv_Line_Debounce_Count)||(nv_Right_Encoder_Current-nv_Right_Encoder_Start)>(nv_Line_Debounce_Count))
-            {
-              //more than debounce time passes, onto next mode
-              nv_Line_Debounce_Mode=2;
-            }
-            break;
-          case 2:
-            //reset encoder count to begin rotating left
-            nv_Right_Encoder_Start=encoder_RightMotor.getRawPosition();
-            nv_Line_Debounce_Mode=3;
-            break;
-          case 3:
-            //spin until encoder count
-            ui_Left_Motor_Speed=1300;
-            ui_Right_Motor_Speed=1700;
-            if((nv_Right_Encoder_Current-nv_Right_Encoder_Start)>50)
-            {
-              nv_Line_Debounce_Mode=4;
-            }
-            break;
-          case 4:
-            //spin back the other way, set up
-            nv_Left_Encoder_Start=encoder_LeftMotor.getRawPosition();
-            nv_Line_Debounce_Mode=5;
-            break;
-          case 5:
-            //spin
-            ui_Left_Motor_Speed=1700;
-            ui_Right_Motor_Speed=1300;
-            if((nv_Left_Encoder_Current-nv_Left_Encoder_Start)>100)
-            {
-              nv_Line_Debounce_Mode=6;
-            }
-            break;
-          case 6:
-            //go back to where we fell off
-            nv_Right_Encoder_Start=encoder_RightMotor.getRawPosition();
-            nv_Line_Debounce_Mode=7;
-            delay(500);
-            break;
-          case 7:
-            //go back spinning
-            ui_Left_Motor_Speed=1200;
-            ui_Right_Motor_Speed=1800;
-            if((nv_Right_Encoder_Current-nv_Right_Encoder_Start)>50)
-            {
-              nv_Line_Debounce_Mode=8;
-            }
-            break;
-          default:
-            //should be case 8, or anything else
-            //give up. its lost
-            bt_Motors_Enabled=false;
-            break;
-        }
-      }
-      else
-      {
-        //at least one sensor on track, motors should go adjustment to steering below
-        bt_Motors_Enabled=true;
-        nv_Line_Debounce_Mode=0; //prep debounce for next reading
-      }
-
-
-      //above was just debouncing all off-track signal, here is real navigation code:
-      if(nv_Left_Line_Tracker_onTrack && nv_Middle_Line_Tracker_onTrack && nv_Right_Line_Tracker_onTrack)
-      {
-        //all on track, stop. Potentially add something to change operating function here?
-        ui_Left_Motor_Speed = ci_Left_Motor_Stop;
-        ui_Right_Motor_Speed = ci_Right_Motor_Stop;
-        nv_Last_Line_Tracker_Index=4;
-      }
-      else if(nv_Left_Line_Tracker_onTrack&&(!nv_Right_Line_Tracker_onTrack))
-      {
-        //if left on track, right off, middle affects amount of drift
-        //is drifting to the right, cut left motor
-        nv_Last_Line_Tracker_Index=1;
-        if(nv_Middle_Line_Tracker_onTrack)
-        {
-          //drift slightly
-          ui_Left_Motor_Speed=constrain(ui_Left_Motor_Speed-100,1500,2100);
-        }
-        else
-        {
-          //drifted a lot
-          ui_Left_Motor_Speed=200;
-        }
-      }
-      else if((!nv_Left_Line_Tracker_onTrack)&&(nv_Right_Line_Tracker_onTrack))
-      {
-        //left is off, right is on track, affects drift
-        //is drifting to left, cut right motor
-        nv_Last_Line_Tracker_Index=3;
-        if(nv_Middle_Line_Tracker_onTrack)
-        {
-          //drifting a little
-          ui_Right_Motor_Speed=constrain(ui_Right_Motor_Speed-100,1500,2100);
-        }
-        else
-        {
-          //drifting a lot
-          ui_Right_Motor_Speed=200;
-        }
-      }
-
-
-      //check if middle light was last on, increase debounce time if thats the case
-      if(nv_Middle_Line_Tracker_onTrack&&(!nv_Left_Line_Tracker_onTrack)&&(!nv_Right_Line_Tracker_onTrack))
-      {
-        nv_Line_Debounce_Count=50;
-        nv_Last_Line_Tracker_Index=2;
-        //upped debounce time if middle last on track
-        //default speed is set at beginning of each loop, no need to state it here again
-      }
-      else if(nv_Left_Line_Tracker_onTrack||nv_Middle_Line_Tracker_onTrack||nv_Right_Line_Tracker_onTrack)
-      {
-        //reset debounce count if not all off track
-        nv_Line_Debounce_Count=15;
-      }
-
+        
+        Linefollow(); //Lab 3 code to follow line
 
         if(bt_Motors_Enabled&&(nv_Line_Debounce_Mode!=1))
         {
@@ -699,7 +559,7 @@ void readLineTrackers()
   if(nv_Line_is_Light)
   {
     //reverse readings for on track if line is light (default is for dark track)
-    nv_Left_Line_Tracker_onTrack=!nv_Left_Line_Tracker;
+    nv_Left_Line_Tracker_onTrack=!nv_Left_Line_Tracker_onTrack;
     nv_Middle_Line_Tracker_onTrack=!nv_Middle_Line_Tracker_onTrack;
     nv_Right_Line_Tracker_onTrack=!nv_Right_Line_Tracker_onTrack;
   }
@@ -738,7 +598,247 @@ void Ping()
 #endif
 }  
 
+//below are functions I created
+void WiggleLeft()
+{
+  //used by linefollow, and potentially search mode
+  //rotates to the left, then right, then back to starting
+  switch(nv_Line_Debounce_Mode)
+        {
+          case 2:
+            //reset encoder count to begin rotating left
+            nv_Right_Encoder_Start=encoder_RightMotor.getRawPosition();
+            nv_Line_Debounce_Mode=3;
+            break;
+          case 3:
+            //spin left until encoder count
+            ui_Left_Motor_Speed=1200;
+            ui_Right_Motor_Speed=1800;
+            if((nv_Right_Encoder_Current-nv_Right_Encoder_Start)>nv_Wiggle_Encoder_Count)
+            {
+              nv_Line_Debounce_Mode=4;
+            }
+            break;
+          case 4:
+            //spin back the other way, set up
+            nv_Left_Encoder_Start=encoder_LeftMotor.getRawPosition();
+            nv_Line_Debounce_Mode=5;
+            break;
+          case 5:
+            //spin right, twice as much
+            ui_Left_Motor_Speed=1800;
+            ui_Right_Motor_Speed=1200;
+            if((nv_Left_Encoder_Current-nv_Left_Encoder_Start)>(2*nv_Wiggle_Encoder_Count))
+            {
+              nv_Line_Debounce_Mode=6;
+            }
+            break;
+          case 6:
+            //go back to where we fell off, set up
+            nv_Right_Encoder_Start=encoder_RightMotor.getRawPosition();
+            nv_Line_Debounce_Mode=7;
+            delay(500);
+            break;
+          case 7:
+            //go back spinning left
+            ui_Left_Motor_Speed=1200;
+            ui_Right_Motor_Speed=1800;
+            if((nv_Right_Encoder_Current-nv_Right_Encoder_Start)>nv_Wiggle_Encoder_Count)
+            {
+              nv_Line_Debounce_Mode=8;
+            }
+            break;
+          case 8:
+            //give up. its lost
+            bt_Motors_Enabled=false;
+            break;
+          default:
+            break;
+        }
+}
 
+void WiggleRight()
+{
+  //same as WiggleLeft, but this time goes right first, then left, then back to start
+  switch(nv_Line_Debounce_Mode)
+        {
+          case 2:
+            //reset encoder count to begin rotating right
+            nv_Left_Encoder_Start=encoder_LeftMotor.getRawPosition();
+            nv_Line_Debounce_Mode=3;
+            break;
+          case 3:
+            //spin right until encoder count
+            ui_Left_Motor_Speed=1800;
+            ui_Right_Motor_Speed=1200;
+            if((nv_Left_Encoder_Current-nv_Left_Encoder_Start)>nv_Wiggle_Encoder_Count)
+            {
+              nv_Line_Debounce_Mode=4;
+            }
+            break;
+          case 4:
+            //spin back the other way, set up
+            nv_Right_Encoder_Start=encoder_RightMotor.getRawPosition();
+            nv_Line_Debounce_Mode=5;
+            break;
+          case 5:
+            //spin left, twice as much
+            ui_Left_Motor_Speed=1200;
+            ui_Right_Motor_Speed=1800;
+            if((nv_Right_Encoder_Current-nv_Right_Encoder_Start)>(2*nv_Wiggle_Encoder_Count))
+            {
+              nv_Line_Debounce_Mode=6;
+            }
+            break;
+          case 6:
+            //go back to where we fell off, set up
+            nv_Left_Encoder_Start=encoder_LeftMotor.getRawPosition();
+            nv_Line_Debounce_Mode=7;
+            delay(500);
+            break;
+          case 7:
+            //go back spinning right
+            ui_Left_Motor_Speed=1200;
+            ui_Right_Motor_Speed=1800;
+            if((nv_Right_Encoder_Current-nv_Right_Encoder_Start)>nv_Wiggle_Encoder_Count)
+            {
+              nv_Line_Debounce_Mode=8;
+            }
+            break;
+          case 8:
+            //give up. its lost
+            bt_Motors_Enabled=false;
+            break;
+          default:
+            break;
+        }
+}
+
+
+void Linefollow()
+{
+  //basically all of lab 3 is this function
+  //note main needs to call readsensors() as well as writing the speeds of motors to the motors
+    //Line colour is determined by last calibration done. Calibrate line colour last. Reset defaults to black line.
+    //Follows line, stops off track or all solid track
+    //slows or stops a wheel if drifting off
+    //if gone too far off, will turn slightly to attempt to find track, before giving up and stopping
+
+      if((!nv_Left_Line_Tracker_onTrack)&&(!nv_Middle_Line_Tracker_onTrack)&&(!nv_Right_Line_Tracker_onTrack))
+      {
+        //debouncing for slight off-track reading between lights
+        nv_Left_Encoder_Current=encoder_LeftMotor.getRawPosition();
+        nv_Right_Encoder_Current=encoder_RightMotor.getRawPosition();
+        nv_Wiggle_Encoder_Count=50;
+
+
+        switch(nv_Line_Debounce_Mode)
+        {
+          case 0:
+            //just toggled to all off track, begin encoder counts
+            nv_Line_Debounce_Mode=1;
+            nv_Left_Encoder_Start=encoder_LeftMotor.getRawPosition();
+            nv_Right_Encoder_Start=encoder_RightMotor.getRawPosition();
+            break;
+          case 1:
+            //Nothing changes, continue as is until debounce tick passes
+            if((nv_Left_Encoder_Current-nv_Left_Encoder_Start)>(nv_Line_Debounce_Count)||(nv_Right_Encoder_Current-nv_Right_Encoder_Start)>(nv_Line_Debounce_Count))
+            {
+              //more than debounce time passes, onto next mode
+              nv_Line_Debounce_Mode=2;
+            }
+            break;
+          case 2:
+          case 3:
+          case 4:
+          case 5:
+          case 6:
+          case 7:
+            //enter wiggle mode to search for the line
+            if(nv_Last_Line_Tracker_Index==3)
+            {
+              //right was last on track, check to the right
+              WiggleRight();
+            }
+            else
+            {
+              //either left was last on, so wiggle left
+              //or something else but we need to pick a direction to go so left is first
+              WiggleLeft();
+            }
+            break;
+          default:
+            //should be case 8, or anything else
+            //give up. its lost
+            bt_Motors_Enabled=false;
+            break;
+        }
+      }
+      else
+      {
+        //at least one sensor on track, motors should go adjustment to steering below
+        bt_Motors_Enabled=true;
+        nv_Line_Debounce_Mode=0; //prep debounce for next reading
+      }
+
+
+      //above was just debouncing all off-track signal, here is real navigation code:
+      if(nv_Left_Line_Tracker_onTrack && nv_Middle_Line_Tracker_onTrack && nv_Right_Line_Tracker_onTrack)
+      {
+        //all on track, stop. Potentially add something to change operating function here?
+        ui_Left_Motor_Speed = ci_Left_Motor_Stop;
+        ui_Right_Motor_Speed = ci_Right_Motor_Stop;
+        nv_Last_Line_Tracker_Index=4;
+      }
+      else if(nv_Left_Line_Tracker_onTrack&&(!nv_Right_Line_Tracker_onTrack))
+      {
+        //if left on track, right off, middle affects amount of drift
+        //is drifting to the right, cut left motor
+        nv_Last_Line_Tracker_Index=1;
+        if(nv_Middle_Line_Tracker_onTrack)
+        {
+          //drift slightly
+          ui_Left_Motor_Speed=constrain(ui_Left_Motor_Speed-100,1500,2100);
+        }
+        else
+        {
+          //drifted a lot
+          ui_Left_Motor_Speed=200;
+        }
+      }
+      else if((!nv_Left_Line_Tracker_onTrack)&&(nv_Right_Line_Tracker_onTrack))
+      {
+        //left is off, right is on track, affects drift
+        //is drifting to left, cut right motor
+        nv_Last_Line_Tracker_Index=3;
+        if(nv_Middle_Line_Tracker_onTrack)
+        {
+          //drifting a little
+          ui_Right_Motor_Speed=constrain(ui_Right_Motor_Speed-100,1500,2100);
+        }
+        else
+        {
+          //drifting a lot
+          ui_Right_Motor_Speed=200;
+        }
+      }
+
+
+      //check if middle light was last on, increase debounce time if thats the case
+      if(nv_Middle_Line_Tracker_onTrack&&(!nv_Left_Line_Tracker_onTrack)&&(!nv_Right_Line_Tracker_onTrack))
+      {
+        nv_Line_Debounce_Count=50;
+        nv_Last_Line_Tracker_Index=2;
+        //upped debounce time if middle last on track
+        //default speed is set at beginning of each loop, no need to state it here again
+      }
+      else if(nv_Left_Line_Tracker_onTrack||nv_Middle_Line_Tracker_onTrack||nv_Right_Line_Tracker_onTrack)
+      {
+        //reset debounce count if not all off track
+        nv_Line_Debounce_Count=15; //we may be able to remove the separation of line debounce count longer for last on middle
+      }
+
+}
 
 
 
