@@ -113,16 +113,16 @@ unsigned int ui_Right_Motor_Speed;
 long l_Left_Motor_Position;
 long l_Right_Motor_Position;
                                      //using nv_ before the variables I add for less confusion
-bool nv_Left_Line_Tracker_isDark;    //Lines I added for our logic of what the sensors have
-bool nv_Middle_Line_Tracker_isDark;  //Note, code only checks if dark, if light its just assumed as not dark
-bool nv_Right_Line_Tracker_isDark;   //we may want to change this later, but not sure what we'd do with middle ground readings (not dark or light)
+bool nv_Left_Line_Tracker_onTrack;    //Lines I added for our logic of what the sensors have
+bool nv_Middle_Line_Tracker_onTrack;  //Note, code works for either background colour now
+bool nv_Right_Line_Tracker_onTrack;   //default track setting is dark with light background
 bool nv_Line_is_Light=false;           //change based on testing conditions
 unsigned long nv_Left_Encoder_Start;   //used for debouncing line following
 unsigned long nv_Left_Encoder_Current;
 unsigned long nv_Right_Encoder_Start;
 unsigned long nv_Right_Encoder_Current;
-int nv_Line_Debounce_Mode=0;   //increments from 0-5 on stages of debouncing
-int nv_Line_Debounce_Count=10;
+int nv_Line_Debounce_Mode=0;          //increments from 0-8 on stages of debouncing
+int nv_Line_Debounce_Count=10;       //how many encoder counts off the main line before something needs to change?
 int nv_Last_Line_Tracker_Index;      //1 if left was last on, 2 if only middle, 3 if right, 4 if all/reset
 
 //more variables from original code
@@ -309,20 +309,18 @@ void loop()
          possibly encoder counts.
        /*************************************************************************************/
 
-      //For now, assuming black line
-      //Follows line, stops on light, goes on black or single black in middle
-      //adjusts speed to half if drifting off
-      //stops one wheel if really drifting
+      //Line colour is determined by last calibration done. Calibrate line colour last. Reset defaults to black line.
+      //Follows line, stops off track or all solid track
+      //slows or stops a wheel if drifting off
+      //if gone too far off, will turn slightly to attempt to find track, before giving up and stopping
 
-      if((!nv_Left_Line_Tracker_isDark)&&(!nv_Middle_Line_Tracker_isDark)&&(!nv_Right_Line_Tracker_isDark))
+      if((!nv_Left_Line_Tracker_onTrack)&&(!nv_Middle_Line_Tracker_onTrack)&&(!nv_Right_Line_Tracker_onTrack))
       {
         //debouncing for slight off-track reading between lights
         nv_Left_Encoder_Current=encoder_LeftMotor.getRawPosition();
         nv_Right_Encoder_Current=encoder_RightMotor.getRawPosition();
 
-        Serial.print("Debounce mode: ");
-        Serial.println(nv_Line_Debounce_Mode);
-        
+
         switch(nv_Line_Debounce_Mode)
         {
           case 0:
@@ -357,7 +355,6 @@ void loop()
             //spin back the other way, set up
             nv_Left_Encoder_Start=encoder_LeftMotor.getRawPosition();
             nv_Line_Debounce_Mode=5;
-            Serial.println("We Got Here 4");
             break;
           case 5:
             //spin
@@ -366,15 +363,12 @@ void loop()
             if((nv_Left_Encoder_Current-nv_Left_Encoder_Start)>100)
             {
               nv_Line_Debounce_Mode=6;
-              Serial.println("We Got Here 5: ");
-              Serial.print(nv_Left_Encoder_Current-nv_Left_Encoder_Start);
             }
             break;
           case 6:
             //go back to where we fell off
             nv_Right_Encoder_Start=encoder_RightMotor.getRawPosition();
             nv_Line_Debounce_Mode=7;
-            Serial.println("We Got Here 6");
             delay(500);
             break;
           case 7:
@@ -392,61 +386,29 @@ void loop()
             bt_Motors_Enabled=false;
             break;
         }
-        
-        /*if(nv_Line_Debounce_Standby)
-        {
-          //just changed to this reading
-          nv_Line_Debounce_Standby=false;
-          nv_Left_Encoder_Start=encoder_LeftMotor.getRawPosition();
-          nv_Right_Encoder_Start=encoder_RightMotor.getRawPosition();
-        }
-        nv_Left_Encoder_Current=encoder_LeftMotor.getRawPosition();
-        nv_Right_Encoder_Current=encoder_RightMotor.getRawPosition();
-
-        if(((nv_Left_Encoder_Current-nv_Left_Encoder_Start)>nv_Line_Debounce_Count)||(nv_Right_Encoder_Current-nv_Right_Encoder_Start)>nv_Line_Debounce_Count)
-        {
-          if(((nv_Left_Encoder_Current-nv_Left_Encoder_Start)<400)||(nv_Right_Encoder_Current-nv_Right_Encoder_Start)<400)
-            {
-              //rotate left a bit once off
-              servo_LeftMotor.writeMicroseconds(1200);
-              servo_RightMotor.writeMicroseconds(1800);
-            }
-            else if(((nv_Left_Encoder_Current-nv_Left_Encoder_Start)<1100)||(nv_Right_Encoder_Current-nv_Right_Encoder_Start)<1100)
-            {
-              //then rotate a bit right
-              servo_LeftMotor.writeMicroseconds(1800);
-              servo_RightMotor.writeMicroseconds(1200);
-            }
-            else
-            {
-              //give up
-              //all sensors ligh for awhile, it is off track
-              bt_Motors_Enabled=false;
-            }
-        }*/
       }
       else
       {
-        //at least one sensor dark, motors should go adjustment to steering below
+        //at least one sensor on track, motors should go adjustment to steering below
         bt_Motors_Enabled=true;
         nv_Line_Debounce_Mode=0; //prep debounce for next reading
       }
-      if(nv_Left_Line_Tracker_isDark && nv_Middle_Line_Tracker_isDark && nv_Right_Line_Tracker_isDark)
+
+
+      //above was just debouncing all off-track signal, here is real navigation code:
+      if(nv_Left_Line_Tracker_onTrack && nv_Middle_Line_Tracker_onTrack && nv_Right_Line_Tracker_onTrack)
       {
+        //all on track, stop. Potentially add something to change operating function here?
         ui_Left_Motor_Speed = ci_Left_Motor_Stop;
         ui_Right_Motor_Speed = ci_Right_Motor_Stop;
         nv_Last_Line_Tracker_Index=4;
       }
-
-      //steers by adjusting the stated motor speeds for when it is enabled or not
-      //Speeds get reset at begining of each loop, don't worry about losing calibrated values etc
-      //middle line dark, edges light, leave as is (at full), ditto for all dark
-      else if(nv_Left_Line_Tracker_isDark&&(!nv_Right_Line_Tracker_isDark))
+      else if(nv_Left_Line_Tracker_onTrack&&(!nv_Right_Line_Tracker_onTrack))
       {
-        //if left dark, right light, middle affects amount of drift
+        //if left on track, right off, middle affects amount of drift
         //is drifting to the right, cut left motor
         nv_Last_Line_Tracker_Index=1;
-        if(nv_Middle_Line_Tracker_isDark)
+        if(nv_Middle_Line_Tracker_onTrack)
         {
           //drift slightly
           ui_Left_Motor_Speed=constrain(ui_Left_Motor_Speed-100,1500,2100);
@@ -457,12 +419,12 @@ void loop()
           ui_Left_Motor_Speed=200;
         }
       }
-      else if((!nv_Left_Line_Tracker_isDark)&&(nv_Right_Line_Tracker_isDark))
+      else if((!nv_Left_Line_Tracker_onTrack)&&(nv_Right_Line_Tracker_onTrack))
       {
-        //left is light, right is dark, affects drift
+        //left is off, right is on track, affects drift
         //is drifting to left, cut right motor
         nv_Last_Line_Tracker_Index=3;
-        if(nv_Middle_Line_Tracker_isDark)
+        if(nv_Middle_Line_Tracker_onTrack)
         {
           //drifting a little
           ui_Right_Motor_Speed=constrain(ui_Right_Motor_Speed-100,1500,2100);
@@ -474,14 +436,16 @@ void loop()
         }
       }
 
+
       //check if middle light was last on, increase debounce time if thats the case
-      if(nv_Middle_Line_Tracker_isDark&&(!nv_Left_Line_Tracker_isDark)&&(!nv_Right_Line_Tracker_isDark))
+      if(nv_Middle_Line_Tracker_onTrack&&(!nv_Left_Line_Tracker_onTrack)&&(!nv_Right_Line_Tracker_onTrack))
       {
         nv_Line_Debounce_Count=50;
         nv_Last_Line_Tracker_Index=2;
         //upped debounce time if middle last on track
+        //default speed is set at beginning of each loop, no need to state it here again
       }
-      else if(nv_Left_Line_Tracker_isDark||nv_Middle_Line_Tracker_isDark||nv_Right_Line_Tracker_isDark)
+      else if(nv_Left_Line_Tracker_onTrack||nv_Middle_Line_Tracker_onTrack||nv_Right_Line_Tracker_onTrack)
       {
         //reset debounce count if not all off track
         nv_Line_Debounce_Count=15;
@@ -490,17 +454,8 @@ void loop()
 
         if(bt_Motors_Enabled&&(nv_Line_Debounce_Mode!=1))
         {
-          if(nv_Line_is_Light)
-          {
-          //is set to true if light line on dark background
-          servo_LeftMotor.writeMicroseconds(ui_Right_Motor_Speed);
-          servo_RightMotor.writeMicroseconds(ui_Left_Motor_Speed);
-          }
-          else
-          {
           servo_LeftMotor.writeMicroseconds(ui_Left_Motor_Speed);
           servo_RightMotor.writeMicroseconds(ui_Right_Motor_Speed);
-          }
         }
         else if(bt_Motors_Enabled==false)
         {  
@@ -713,32 +668,40 @@ void readLineTrackers()
   if(ui_Left_Line_Tracker_Data < (ui_Left_Line_Tracker_Dark - ui_Line_Tracker_Tolerance))
   {
     CharliePlexM::Write(ci_Left_Line_Tracker_LED, HIGH);
-    nv_Left_Line_Tracker_isDark=false;
+    nv_Left_Line_Tracker_onTrack=false;
   }
   else
   { 
     CharliePlexM::Write(ci_Left_Line_Tracker_LED, LOW);
-    nv_Left_Line_Tracker_isDark=true;
+    nv_Left_Line_Tracker_onTrack=true;
   }
   if(ui_Middle_Line_Tracker_Data < (ui_Middle_Line_Tracker_Dark - ui_Line_Tracker_Tolerance))
   {
     CharliePlexM::Write(ci_Middle_Line_Tracker_LED, HIGH);
-    nv_Middle_Line_Tracker_isDark=false;
+    nv_Middle_Line_Tracker_onTrack=false;
   }
   else
   { 
     CharliePlexM::Write(ci_Middle_Line_Tracker_LED, LOW);
-    nv_Middle_Line_Tracker_isDark=true;
+    nv_Middle_Line_Tracker_onTrack=true;
   }
   if(ui_Right_Line_Tracker_Data < (ui_Right_Line_Tracker_Dark - ui_Line_Tracker_Tolerance))
   {
     CharliePlexM::Write(ci_Right_Line_Tracker_LED, HIGH);
-    nv_Right_Line_Tracker_isDark=false;
+    nv_Right_Line_Tracker_onTrack=false;
   }
   else
   { 
     CharliePlexM::Write(ci_Right_Line_Tracker_LED, LOW);
-    nv_Right_Line_Tracker_isDark=true;
+    nv_Right_Line_Tracker_onTrack=true;
+  }
+
+  if(nv_Line_is_Light)
+  {
+    //reverse readings for on track if line is light (default is for dark track)
+    nv_Left_Line_Tracker_onTrack=!nv_Left_Line_Tracker;
+    nv_Middle_Line_Tracker_onTrack=!nv_Middle_Line_Tracker_onTrack;
+    nv_Right_Line_Tracker_onTrack=!nv_Right_Line_Tracker_onTrack;
   }
 
 #ifdef DEBUG_LINE_TRACKERS
